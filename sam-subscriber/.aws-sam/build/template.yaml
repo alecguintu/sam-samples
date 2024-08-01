@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'sam-subscriber
+
+  Sample SAM Template for sam-subscriber
+
+  '
+Globals:
+  Function:
+    Timeout: 5
+    MemorySize: 128
+    Tracing: Active
+    LoggingConfig:
+      LogFormat: JSON
+  Api:
+    TracingEnabled: true
+Resources:
+  SubscribeQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      SqsManagedSseEnabled: true
+  SubscribeSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint:
+        Fn::GetAtt:
+        - SubscribeQueue
+        - Arn
+      Protocol: sqs
+      RawMessageDelivery: true
+      TopicArn:
+        Fn::ImportValue: PublisherPublishTopicArn
+  SubscribeQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+      - Ref: SubscribeQueue
+      PolicyDocument:
+        Statement:
+          Effect: Allow
+          Principal: '*'
+          Action: sqs:SendMessage
+          Resource: '*'
+          Condition:
+            ArnEquals:
+              aws:SourceArn:
+                Fn::ImportValue: PublisherPublishTopicArn
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+      SamResourceId: HelloWorldFunction
+    Properties:
+      CodeUri: HelloWorldFunction
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures:
+      - x86_64
+      Events:
+        CatchAll:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt:
+              - SubscribeQueue
+              - Arn
+            BatchSize: 1
+            Enabled: true
+  ApplicationResourceGroup:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Name:
+        Fn::Sub: ApplicationInsights-SAM-${AWS::StackName}
+      ResourceQuery:
+        Type: CLOUDFORMATION_STACK_1_0
+  ApplicationInsightsMonitoring:
+    Type: AWS::ApplicationInsights::Application
+    Properties:
+      ResourceGroupName:
+        Ref: ApplicationResourceGroup
+      AutoConfigurationEnabled: 'true'
+Outputs:
+  HelloWorldFunction:
+    Description: First Lambda Function ARN
+    Value:
+      Fn::GetAtt:
+      - HelloWorldFunction
+      - Arn
+  HelloWorldFunctionIamRole:
+    Description: Implicit IAM Role created for Hello World function
+    Value:
+      Fn::GetAtt:
+      - HelloWorldFunctionRole
+      - Arn

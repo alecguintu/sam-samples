@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  sam-publisher
+
+  Sample SAM Template for sam-publisher
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 5
+    MemorySize: 128
+
+    Tracing: Active
+    # You can add LoggingConfig parameters such as the Logformat, Log Group, and SystemLogLevel or ApplicationLogLevel. Learn more here https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html#sam-function-loggingconfig.
+    LoggingConfig:
+      LogFormat: JSON
+  Api:
+    TracingEnabled: true
+Resources:
+  PublishTopic:
+    Type: AWS::SNS::Topic
+    # Properties:
+      # Subscription:
+      #   - Endpoint: endpoint of queue
+      #     Protocol: sqs
+
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      CodeUri: hello-world/
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures:
+      - x86_64
+      Events:
+        CatchAll:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /hello
+            Method: GET
+      Environment: # More info about Env Vars: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#environment-object
+        Variables:
+          PUBLISH_TOPIC: !GetAtt PublishTopic.TopicName
+          AMZ_REGION: ap-southeast-1
+          AMZ_ACCOUNT_ID: 334139474753
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt PublishTopic.TopicName
+
+  HelloWorldPubSnsFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      CodeUri: hello-world-pub-sns/
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures:
+      - x86_64
+      Events:
+        CatchAll:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /hello-2
+            Method: GET
+      EventInvokeConfig:
+        DestinationConfig:
+          OnSuccess:
+            Destination: !GetAtt PublishTopic.TopicArn
+            Type: SNS
+        MaximumEventAgeInSeconds: 21600
+        MaximumRetryAttempts: 2
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt PublishTopic.TopicName
+
+  ApplicationResourceGroup:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Name:
+        Fn::Sub: ApplicationInsights-SAM-${AWS::StackName}
+      ResourceQuery:
+        Type: CLOUDFORMATION_STACK_1_0
+  ApplicationInsightsMonitoring:
+    Type: AWS::ApplicationInsights::Application
+    Properties:
+      ResourceGroupName:
+        Ref: ApplicationResourceGroup
+      AutoConfigurationEnabled: 'true'
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  HelloWorldAPI:
+    Description: API Gateway endpoint URL for Prod environment for First Function
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
+  HelloWorldFunction:
+    Description: First Lambda Function ARN
+    Value: !GetAtt HelloWorldFunction.Arn
+  HelloWorldFunctionIamRole:
+    Description: Implicit IAM Role created for Hello World function
+    Value: !GetAtt HelloWorldFunctionRole.Arn
+  HelloWorldPubSnsAPI:
+    Description: API Gateway endpoint URL for Prod environment for First Function
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello-2/"
+  HelloWorldPubSnsFunction:
+    Description: First Lambda Function ARN
+    Value: !GetAtt HelloWorldPubSnsFunction.Arn
+  HelloWorldPubSnsFunctionIamRole:
+    Description: Implicit IAM Role created for Hello World function
+    Value: !GetAtt HelloWorldFunctionRole.Arn
+  PublishTopic:
+    Description: Published Topic ARN
+    Value: !GetAtt PublishTopic.TopicArn
+    Export:
+      Name: PublisherPublishTopicArn-[staging]
